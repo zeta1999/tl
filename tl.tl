@@ -789,6 +789,7 @@ local Node = record
    key: Node
    value: Node
 
+   typevars: Type
    args: Node
    rets: Type
    body: Node
@@ -980,26 +981,6 @@ local function parse_trying_list(tokens: {Token}, i: number, errs: {ParseError},
    return i, list
 end
 
-local function parse_function_type(tokens: {Token}, i: number, errs: {ParseError}): number, Type
-   i = i + 1
-   local node: Type = {
-      y = tokens[i - 1].y,
-      x = tokens[i - 1].x,
-      kind = "typedecl",
-      typename = "function",
-      args = {},
-      rets = {},
-   }
-   if tokens[i].tk == "(" then
-      i, node.args = parse_argument_type_list(tokens, i, errs)
-      i, node.rets = parse_type_list(tokens, i, errs)
-   else
-      node.args = { { typename = "any", is_va = true } }
-      node.rets = { { typename = "any", is_va = true } }
-   end
-   return i, node
-end
-
 local function parse_typevar_type(tokens: {Token}, i: number, errs: {ParseError}): number, Type, number
    i = i + 1
    i = verify_kind(tokens, i, errs, "identifier")
@@ -1020,6 +1001,29 @@ end
 local function parse_typeval_list(tokens: {Token}, i: number, errs: {ParseError}): number, Type
    local typ = new_type(tokens, i, "typeval_list")
    return parse_bracket_list(tokens, i, errs, typ, "<", ">", true, parse_type)
+end
+
+local function parse_function_type(tokens: {Token}, i: number, errs: {ParseError}): number, Type
+   i = i + 1
+   local node: Type = {
+      y = tokens[i - 1].y,
+      x = tokens[i - 1].x,
+      kind = "typedecl",
+      typename = "function",
+      args = {},
+      rets = {},
+   }
+   if tokens[i].tk == "<" then
+      i, node.typevars = parse_typevar_list(tokens, i, errs)
+   end
+   if tokens[i].tk == "(" then
+      i, node.args = parse_argument_type_list(tokens, i, errs)
+      i, node.rets = parse_type_list(tokens, i, errs)
+   else
+      node.args = { { typename = "any", is_va = true } }
+      node.rets = { { typename = "any", is_va = true } }
+   end
+   return i, node
 end
 
 parse_type = function(tokens: {Token}, i: number, errs: {ParseError}): number, Type, number
@@ -1095,6 +1099,9 @@ parse_type_list = function(tokens: {Token}, i: number, errs: {ParseError}, open:
 end
 
 local function parse_function_args_rets_body(tokens: {Token}, i: number, errs: {ParseError}, node: Node): number, Node
+   if tokens[i].tk == "<" then
+      i, node.typevars = parse_typevar_list(tokens, i, errs)
+   end
    i, node.args = parse_argument_list(tokens, i, errs)
    i, node.rets = parse_type_list(tokens, i, errs)
    i, node.body = parse_statements(tokens, i, errs)
@@ -1637,16 +1644,7 @@ local function parse_newtype(tokens: {Token}, i: number, errs: {ParseError}): nu
       i = verify_tk(tokens, i, errs, "end")
       return i, node
    elseif tokens[i].tk == "functiontype" then
-      local typevars: Type
-      i = i + 1
-      if tokens[i].tk == "<" then
-         i, typevars = parse_typevar_list(tokens, i, errs)
-      end
-      i = i - 1
       i, node.newtype.def = parse_function_type(tokens, i, errs)
-      if typevars then
-         node.newtype.def.typevars = typevars
-      end
       return i, node
    end
    return fail(tokens, i, errs)
@@ -2890,24 +2888,24 @@ local standard_library: {string:Type} = {
    ["any"] = { typename = "typetype", def = ANY },
    ["arg"] = ARRAY_OF_STRING,
    ["require"] = { typename = "function", args = { STRING }, rets = {} },
-   ["setmetatable"] = { typename = "function", args = { ALPHA, METATABLE }, rets = { ALPHA } },
+   ["setmetatable"] = { typename = "function", typevars = { ALPHA }, args = { ALPHA, METATABLE }, rets = { ALPHA } },
    ["getmetatable"] = { typename = "function", args = { ANY }, rets = { METATABLE } },
    ["rawget"] = { typename = "function", args = { TABLE, ANY }, rets = { ANY } },
    ["rawset"] = {
       typename = "poly",
       poly = {
-         { typename = "function", args = { MAP_OF_ALPHA_TO_BETA, ALPHA, BETA }, rets = {} },
-         { typename = "function", args = { ARRAY_OF_ALPHA, NUMBER, ALPHA }, rets = {} },
+         { typename = "function", typevars = { ALPHA, BETA }, args = { MAP_OF_ALPHA_TO_BETA, ALPHA, BETA }, rets = {} },
+         { typename = "function", typevars = { ALPHA }, args = { ARRAY_OF_ALPHA, NUMBER, ALPHA }, rets = {} },
          { typename = "function", args = { TABLE, ANY, ANY }, rets = {} },
       }
    },
    ["next"] = {
       typename = "poly",
       poly = {
-         { typename = "function", args = { MAP_OF_ALPHA_TO_BETA }, rets = { ALPHA, BETA } },
-         { typename = "function", args = { MAP_OF_ALPHA_TO_BETA, ALPHA }, rets = { ALPHA, BETA } },
-         { typename = "function", args = { ARRAY_OF_ALPHA }, rets = { NUMBER, ALPHA } },
-         { typename = "function", args = { ARRAY_OF_ALPHA, ALPHA }, rets = { NUMBER, ALPHA } },
+         { typename = "function", typevars = { ALPHA, BETA }, args = { MAP_OF_ALPHA_TO_BETA }, rets = { ALPHA, BETA } },
+         { typename = "function", typevars = { ALPHA, BETA }, args = { MAP_OF_ALPHA_TO_BETA, ALPHA }, rets = { ALPHA, BETA } },
+         { typename = "function", typevars = { ALPHA }, args = { ARRAY_OF_ALPHA }, rets = { NUMBER, ALPHA } },
+         { typename = "function", typevars = { ALPHA }, args = { ARRAY_OF_ALPHA, ALPHA }, rets = { NUMBER, ALPHA } },
       },
    },
    ["load"] = {
@@ -2948,7 +2946,7 @@ local standard_library: {string:Type} = {
             ["__call"] = FUNCTION,
             ["__gc"] = { typename = "function", args = { ANY }, rets = {} },
             ["__len"] = { typename = "function", args = { ANY }, rets = { NUMBER } },
-            ["__pairs"] = { typename = "function", args = { { typename = "map", keys = ALPHA, values = BETA } }, rets = {
+            ["__pairs"] = { typename = "function", typevars = { ALPHA, BETA }, args = { { typename = "map", keys = ALPHA, values = BETA } }, rets = {
                   { typename = "function", args = {}, rets = { ALPHA, BETA } },
             } },
             -- TODO complete...
@@ -3011,28 +3009,29 @@ local standard_library: {string:Type} = {
          ["unpack"] = {
             typename = "function",
             needs_compat53 = true,
+            typevars = { ALPHA },
             args = { ARRAY_OF_ALPHA, NUMBER, NUMBER },
             rets = { { typename = "typevar", typevar = "`a", is_va = true }
          } },
          ["move"] = {
             typename = "poly",
             poly = {
-               { typename = "function", args = { ARRAY_OF_ALPHA, NUMBER, NUMBER, NUMBER }, rets = { ARRAY_OF_ALPHA } },
-               { typename = "function", args = { ARRAY_OF_ALPHA, NUMBER, NUMBER, NUMBER, ARRAY_OF_ALPHA }, rets = { ARRAY_OF_ALPHA } },
+               { typename = "function", typevars = { ALPHA }, args = { ARRAY_OF_ALPHA, NUMBER, NUMBER, NUMBER }, rets = { ARRAY_OF_ALPHA } },
+               { typename = "function", typevars = { ALPHA }, args = { ARRAY_OF_ALPHA, NUMBER, NUMBER, NUMBER, ARRAY_OF_ALPHA }, rets = { ARRAY_OF_ALPHA } },
             }
          },
          ["insert"] = {
             typename = "poly",
             poly = {
-               { typename = "function", args = { ARRAY_OF_ALPHA, NUMBER, ALPHA }, rets = {} },
-               { typename = "function", args = { ARRAY_OF_ALPHA, ALPHA }, rets = {} },
+               { typename = "function", typevars = { ALPHA }, args = { ARRAY_OF_ALPHA, NUMBER, ALPHA }, rets = {} },
+               { typename = "function", typevars = { ALPHA }, args = { ARRAY_OF_ALPHA, ALPHA }, rets = {} },
             }
          },
          ["remove"] = {
             typename = "poly",
             poly = {
-               { typename = "function", args = { ARRAY_OF_ALPHA, NUMBER }, rets = { ALPHA } },
-               { typename = "function", args = { ARRAY_OF_ALPHA }, rets = { ALPHA } },
+               { typename = "function", typevars = { ALPHA }, args = { ARRAY_OF_ALPHA, NUMBER }, rets = { ALPHA } },
+               { typename = "function", typevars = { ALPHA }, args = { ARRAY_OF_ALPHA }, rets = { ALPHA } },
             }
          },
          ["concat"] = {
@@ -3045,8 +3044,8 @@ local standard_library: {string:Type} = {
          ["sort"] = {
             typename = "poly",
             poly = {
-               { typename = "function", args = { ARRAY_OF_ALPHA }, rets = {} },
-               { typename = "function", args = { ARRAY_OF_ALPHA, { typename = "function", args = { ALPHA, ALPHA }, rets = { BOOLEAN } } }, rets = {} },
+               { typename = "function", typevars = { ALPHA }, args = { ARRAY_OF_ALPHA }, rets = {} },
+               { typename = "function", typevars = { ALPHA }, args = { ARRAY_OF_ALPHA, { typename = "function", args = { ALPHA, ALPHA }, rets = { BOOLEAN } } }, rets = {} },
             }
          }
       },
@@ -3103,24 +3102,24 @@ local standard_library: {string:Type} = {
          ["offset"] = { typename = "function", args = { STRING, NUMBER, NUMBER }, rets = { NUMBER } },
       },
    },
-   ["ipairs"] = { typename = "function", args = { ARRAY_OF_ALPHA }, rets = {
+   ["ipairs"] = { typename = "function", typevars = { ALPHA }, args = { ARRAY_OF_ALPHA }, rets = {
       { typename = "function", args = {}, rets = { NUMBER, ALPHA } },
    } },
-   ["pairs"] = { typename = "function", args = { { typename = "map", keys = ALPHA, values = BETA } }, rets = {
+   ["pairs"] = { typename = "function", typevars = { ALPHA, BETA }, args = { { typename = "map", keys = ALPHA, values = BETA } }, rets = {
       { typename = "function", args = {}, rets = { ALPHA, BETA } },
    } },
    ["pcall"] = { typename = "function", args = { VARARG_ANY }, rets = { BOOLEAN, ANY } },
    ["assert"] = {
       typename = "poly",
       poly = {
-         { typename = "function", args = { ALPHA }, rets = { ALPHA } },
-         { typename = "function", args = { ALPHA, BETA }, rets = { ALPHA } },
+         { typename = "function", typevars = { ALPHA }, args = { ALPHA }, rets = { ALPHA } },
+         { typename = "function", typevars = { ALPHA, BETA }, args = { ALPHA, BETA }, rets = { ALPHA } },
       }
    },
    ["select"] = {
       typename = "poly",
       poly = {
-         { typename = "function", args = { NUMBER, ALPHA }, rets = { ALPHA } },
+         { typename = "function", typevars = { ALPHA }, args = { NUMBER, ALPHA }, rets = { ALPHA } },
          { typename = "function", args = { STRING, VARARG_ANY }, rets = { NUMBER } },
       }
    },
@@ -3310,7 +3309,7 @@ function tl.type_check(ast: Node, lax: boolean, filename: string, modules: {stri
       return t
    end
 
-   local function error_in_type(t: Type, msg: string, ...:Type): Error
+   local function error_in_type(where: Type, msg: string, ...: Type): Error
       local n = select("#", ...)
       if n > 0 then
          local showt = {}
@@ -3325,8 +3324,8 @@ function tl.type_check(ast: Node, lax: boolean, filename: string, modules: {stri
       end
 
       return {
-         y = t.y,
-         x = t.x,
+         y = where.y,
+         x = where.x,
          msg = msg,
          filename = filename,
       }
