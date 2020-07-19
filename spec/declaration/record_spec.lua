@@ -1,8 +1,52 @@
 local util = require("spec.util")
 
 describe("records", function()
+   it("can be declared with 'local type'", util.check [[
+      local type Point = record
+         x: number
+         y: number
+      end
+
+      local p: Point = {}
+      p.x = 12
+      p.y = 12
+   ]])
+
+   it("can be declared with 'local record'", util.check [[
+      local record Point
+         x: number
+         y: number
+      end
+
+      local p: Point = {}
+      p.x = 12
+      p.y = 12
+   ]])
+
+   it("can be declared with 'global type'", util.check [[
+      global type Point = record
+         x: number
+         y: number
+      end
+
+      local p: Point = {}
+      p.x = 12
+      p.y = 12
+   ]])
+
+   it("can be declared with 'global record'", util.check [[
+      global record Point
+         x: number
+         y: number
+      end
+
+      local p: Point = {}
+      p.x = 12
+      p.y = 12
+   ]])
+
    it("can have self-references", util.check [[
-      local type SLAXML = record
+      local record SLAXML
           parse: function(self: SLAXML, xml: string, anotherself: SLAXML)
        end
 
