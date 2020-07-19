@@ -30,10 +30,10 @@ describe("union declaration", function()
    }))
 
    it("cannot declare a union between multiple records", util.check_type_error([[
-      local R1 = record
+      local type R1 = record
          f: string
       end
-      local R2 = record
+      local type R2 = record
          g: string
       end
       local t: R1 | R2

@@ -1989,19 +1989,7 @@ local function parse_variable_declarations(ps: ParseState, i: number, node_name:
       repeat
          i = i + 1
          local val: Node
-         if is_newtype[ps.tokens[i].tk] then
-            if #asgn.vars > 1 then
-               return fail(ps, i, "cannot perform multiple assignment of type definitions")
-            end
-            i, val = parse_newtype(ps, i)
-            if val then
-               val.newtype.def.names = { asgn.vars[v].tk }
-            else
-               return i, val
-            end
-         else
-            i, val = parse_expression(ps, i)
-         end
+         i, val = parse_expression(ps, i)
          table.insert(asgn.exps, val)
          v = v + 1
       until ps.tokens[i].tk ~= ","
