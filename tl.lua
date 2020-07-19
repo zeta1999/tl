@@ -1909,6 +1909,21 @@ local function parse_record_body(ps, i, def, node)
    return i, node
 end
 
+local function parse_enum_body(ps, i, def, node)
+   def.enumset = {}
+   while not ((not ps.tokens[i]) or ps.tokens[i].tk == "end") do
+      local item
+      i, item = verify_kind(ps, i, "string", "enum_item")
+      if item then
+         table.insert(node, item)
+         def.enumset[unquote(item.tk)] = true
+      end
+   end
+   node.yend = ps.tokens[i].y
+   i = verify_tk(ps, i, "end")
+   return i, node
+end
+
 parse_newtype = function(ps, i)
    local node = new_node(ps.tokens, i, "newtype")
    node.newtype = new_type(ps, i, "typetype")
@@ -1920,19 +1935,9 @@ parse_newtype = function(ps, i)
       return i, node
    elseif ps.tokens[i].tk == "enum" then
       local def = new_type(ps, i, "enum")
-      node.newtype.def = def
-      def.enumset = {}
       i = i + 1
-      while not ((not ps.tokens[i]) or ps.tokens[i].tk == "end") do
-         local item
-         i, item = verify_kind(ps, i, "string", "enum_item")
-         if item then
-            table.insert(node, item)
-            def.enumset[unquote(item.tk)] = true
-         end
-      end
-      node.yend = ps.tokens[i].y
-      i = verify_tk(ps, i, "end")
+      i = parse_enum_body(ps, i, def, node)
+      node.newtype.def = def
       return i, node
    else
       i, node.newtype.def = parse_type(ps, i)
@@ -2021,12 +2026,14 @@ local function parse_type_declaration(ps, i, node_name)
    return i, asgn
 end
 
-local function parse_record(ps, i, node_name)
+local ParseBody = {}
+
+local function parse_type_constructor(ps, i, node_name, type_name, parse_body)
    local asgn = new_node(ps.tokens, i, node_name)
    local nt = new_node(ps.tokens, i, "newtype")
    asgn.value = nt
    nt.newtype = new_type(ps, i, "typetype")
-   local def = new_type(ps, i, "record")
+   local def = new_type(ps, i, type_name)
    nt.newtype.def = def
 
    i = i + 2
@@ -2037,7 +2044,7 @@ local function parse_record(ps, i, node_name)
    end
    nt.newtype.def.names = { asgn.var.tk }
 
-   i = parse_record_body(ps, i, def, nt)
+   i = parse_body(ps, i, def, nt)
    return i, asgn
 end
 
@@ -2048,7 +2055,9 @@ local function parse_statement(ps, i)
       elseif ps.tokens[i + 1].tk == "function" then
          return parse_local_function(ps, i)
       elseif ps.tokens[i + 1].tk == "record" then
-         return parse_record(ps, i, "local_type")
+         return parse_type_constructor(ps, i, "local_type", "record", parse_record_body)
+      elseif ps.tokens[i + 1].tk == "enum" then
+         return parse_type_constructor(ps, i, "local_type", "enum", parse_enum_body)
       else
          i = i + 1
          return parse_variable_declarations(ps, i, "local_declaration")
@@ -2057,7 +2066,9 @@ local function parse_statement(ps, i)
       if ps.tokens[i + 1].tk == "type" then
          return parse_type_declaration(ps, i, "global_type")
       elseif ps.tokens[i + 1].tk == "record" then
-         return parse_record(ps, i, "global_type")
+         return parse_type_constructor(ps, i, "global_type", "record", parse_record_body)
+      elseif ps.tokens[i + 1].tk == "enum" then
+         return parse_type_constructor(ps, i, "global_type", "enum", parse_enum_body)
       elseif ps.tokens[i + 1].tk == "function" then
          i = i + 1
          return parse_function(ps, i)
